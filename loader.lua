@@ -1,8 +1,24 @@
 local player = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
--- Crea GUI HUB
+-- Anti Kick / Anti Ban Hook
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local oldNamecall = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if method == "Kick" or method == "Ban" then
+        print("[AntiKick] Bloccato kick/ban")
+        return
+    end
+    return oldNamecall(self, unpack(args))
+end)
+setreadonly(mt, true)
+
+-- GUI Setup
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 screenGui.Name = "EmergencyHamburgHUB"
 screenGui.ResetOnSpawn = false
@@ -13,7 +29,7 @@ frame.Position = UDim2.new(0.5, -150, 0.5, -220)
 frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 frame.BorderSizePixel = 0
 frame.Active = true
-frame.Draggable = true -- GUI spostabile
+frame.Draggable = true
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1, 0, 0, 40)
@@ -23,7 +39,6 @@ title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.SourceSansBold
 title.TextScaled = true
 
--- Pulsante Minimizza
 local minimizeBtn = Instance.new("TextButton", frame)
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 minimizeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -56,7 +71,7 @@ local function createButton(text, position)
     return btn
 end
 
--- Bottoni
+-- Buttons
 local stealCarSafeBtn = createButton("Steal Car (Safe)", UDim2.new(0.1,0,0,50))
 local stealCarAggressiveBtn = createButton("Steal Car (Aggressive)", UDim2.new(0.1,0,0,100))
 local autoRobBankBtn = createButton("Auto Rob Bank", UDim2.new(0.1,0,0,150))
@@ -68,73 +83,78 @@ local getOutPrisonBtn = createButton("Get Out of Prison", UDim2.new(0.1,0,0,350)
 local carFlyEnabled = false
 local BodyVelocity
 
--- Funzione per rubare l'auto più vicina (SAFE)
+-- RemoteEvents reference (modifica se cambia il nome)
+local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local vehicleRemote = remotesFolder:WaitForChild("EnterVehicle")
+local prisonRemote = remotesFolder:WaitForChild("LeavePrison")
+local robRemote = remotesFolder:WaitForChild("Rob")
+
+-- Funzione per rubare auto (safe)
 local function stealCarSafe()
     local nearestCar = nil
-    local minDistance = math.huge
-    for _,v in pairs(workspace:GetDescendants()) do
+    local minDist = math.huge
+    for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("VehicleSeat") then
             local dist = (player.Character.HumanoidRootPart.Position - v.Position).Magnitude
-            if dist < minDistance then
-                minDistance = dist
+            if dist < minDist then
+                minDist = dist
                 nearestCar = v
             end
         end
     end
     if nearestCar then
-        if nearestCar.Occupant then
-            nearestCar.Occupant.Sit = false
-            wait(0.1)
-        end
-        player.Character.HumanoidRootPart.CFrame = nearestCar.CFrame + Vector3.new(0,2,0)
-        wait(0.1)
-        player.Character.Humanoid.Sit = true
+        -- Usa RemoteEvent per entrare nell'auto
+        vehicleRemote:FireServer(nearestCar)
         print("✅ Auto rubata (Safe).")
     else
         warn("❌ Nessuna macchina trovata.")
     end
 end
 
--- Funzione per rubare l'auto più vicina (AGGRESSIVA)
+-- Funzione per rubare auto (aggressiva)
 local function stealCarAggressive()
     local nearestCar = nil
-    local minDistance = math.huge
-    for _,v in pairs(workspace:GetDescendants()) do
+    local minDist = math.huge
+    for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("VehicleSeat") then
             local dist = (player.Character.HumanoidRootPart.Position - v.Position).Magnitude
-            if dist < minDistance then
-                minDistance = dist
+            if dist < minDist then
+                minDist = dist
                 nearestCar = v
             end
         end
     end
     if nearestCar then
-        nearestCar:Sit(player.Character.Humanoid)
-        player.Character.HumanoidRootPart.CFrame = nearestCar.CFrame + Vector3.new(0,2,0)
+        -- Forza la seduta, bypassando check client/server
+        vehicleRemote:FireServer(nearestCar, true)
         print("✅ Auto rubata (Aggressive).")
     else
         warn("❌ Nessuna macchina trovata.")
     end
 end
 
--- Auto Rob Bank
+-- Auto rob bank
 local function autoRobBank()
-    for _,v in pairs(workspace:GetDescendants()) do
+    for _, v in pairs(workspace:GetDescendants()) do
         if v.Name:lower():find("bank") then
-            player.Character.HumanoidRootPart.CFrame = v.CFrame + Vector3.new(0,5,0)
-            print("🏦 Rubando la banca...")
-            wait(1)
+            player.Character.HumanoidRootPart.CFrame = v.CFrame + Vector3.new(0, 5, 0)
+            wait(0.5)
+            robRemote:FireServer(v)
+            print("🏦 Rubando banca...")
+            wait(2)
         end
     end
 end
 
--- Auto Rob Vending
+-- Auto rob vending
 local function autoRobVending()
-    for _,v in pairs(workspace:GetDescendants()) do
+    for _, v in pairs(workspace:GetDescendants()) do
         if v.Name:lower():find("vending") then
-            player.Character.HumanoidRootPart.CFrame = v.CFrame + Vector3.new(0,3,0)
-            print("🥤 Rubando il distributore...")
-            wait(1)
+            player.Character.HumanoidRootPart.CFrame = v.CFrame + Vector3.new(0, 3, 0)
+            wait(0.5)
+            robRemote:FireServer(v)
+            print("🥤 Rubando distributore...")
+            wait(2)
         end
     end
 end
@@ -142,7 +162,7 @@ end
 -- Car Fly toggle
 local function toggleCarFly()
     local seat = nil
-    for _,v in pairs(workspace:GetDescendants()) do
+    for _, v in pairs(workspace:GetDescendants()) do
         if v:IsA("VehicleSeat") and v.Occupant and v.Occupant.Parent == player.Character then
             seat = v
             break
@@ -179,20 +199,26 @@ local function toggleCarFly()
     end
 end
 
+-- Unlimited Fuel toggle (placeholder, aggiungi logica se serve)
+local unlimitedFuelEnabled = false
+local function toggleUnlimitedFuel()
+    unlimitedFuelEnabled = not unlimitedFuelEnabled
+    print(unlimitedFuelEnabled and "⛽ Unlimited Fuel abilitato." or "⛽ Unlimited Fuel disabilitato.")
+    -- Se vuoi puoi aggiungere qui la logica per fuel infinito
+end
+
 -- Get out of prison
 local function getOutOfPrison()
-    local outsidePosition = Vector3.new(0, 10, 0) -- Cambia posizione fuori dalla prigione se necessario
-    player.Character.HumanoidRootPart.CFrame = CFrame.new(outsidePosition)
+    -- Usa RemoteEvent per uscire dalla prigione
+    prisonRemote:FireServer()
     print("🚪 Sei uscito dalla prigione!")
 end
 
--- Connect bottoni
+-- Connect buttons
 stealCarSafeBtn.MouseButton1Click:Connect(stealCarSafe)
 stealCarAggressiveBtn.MouseButton1Click:Connect(stealCarAggressive)
 autoRobBankBtn.MouseButton1Click:Connect(autoRobBank)
 autoRobVendingBtn.MouseButton1Click:Connect(autoRobVending)
 carFlyBtn.MouseButton1Click:Connect(toggleCarFly)
-unlimitedFuelBtn.MouseButton1Click:Connect(function()
-    print("⛽ Unlimited Fuel abilitato.")
-end)
+unlimitedFuelBtn.MouseButton1Click:Connect(toggleUnlimitedFuel)
 getOutPrisonBtn.MouseButton1Click:Connect(getOutOfPrison)
